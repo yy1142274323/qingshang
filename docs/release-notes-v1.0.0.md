@@ -10,6 +10,7 @@
 | --- | --- | --- |
 | **QingShang.exe** | 128 KB | **便携版**。绿色单文件，双击即用，不写注册表，扔 U 盘里就能带走 |
 | **QingShang-Setup-1.0.0.exe** | 2.0 MB | **安装版**。多出开始菜单、桌面快捷方式、卸载入口，适合发给不折腾的人 |
+| **QingShang.ipa** | 480 KB | **iOS 版**。未签名包，越狱 / TrollStore 设备直接装 |
 
 > 需要 .NET Framework 4.8。Win10 1803 以后的系统自带；Win7 / 8 需要先装一次。
 
@@ -60,6 +61,19 @@ QingShang.exe --mini              启动即迷你模式
 .\tools\get-free-music.ps1 -Count 200
 .\tools\get-free-music.ps1 -Collection musopen -OutDir classical
 ```
+
+## iOS 版怎么装
+
+给越狱 / TrollStore 的设备。下载 `QingShang.ipa`，用 TrollStore 打开就能装 ——
+不需要证书、不需要 Apple ID、不用重签。
+
+装好之后两种方式放歌：
+
+1. App 里点右上角 `+`，从「文件」里选歌
+2. 用 Filza 把歌丢进 `Documents` 目录（文件 App 里也能看到）
+
+iOS 版有：唱片旋转、频谱、后台播放、锁屏控制、进度拖动、单曲循环。
+没有 LRC 歌词（沙盒里读同目录 .lrc 要额外做文件关联，先欠着）。
 
 ## 已知边界
 

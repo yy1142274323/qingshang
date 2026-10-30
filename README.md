@@ -16,10 +16,10 @@
 | 文件 | 大小 | 说明 |
 | --- | --- | --- |
 | `QingShang.exe` | 128 KB | **便携版**。绿色单文件，双击即用，不写注册表，扔 U 盘里就能带走 |
-| `QingShang-Setup-x.y.z.exe` | ~1.4 MB | **安装版**。多出开始菜单、桌面快捷方式、卸载入口，适合发给别人 |
+| `QingShang-Setup-x.y.z.exe` | ~2.1 MB | **安装版**。多出开始菜单、桌面快捷方式、卸载入口，适合发给别人 |
+| `QingShang.ipa` | ~480 KB | **iOS 版**。给越狱 / TrollStore 设备用的未签名包 |
 
-两个里面装的是同一个程序，功能完全一样。挑顺手的用。
-
+Windows 的两个装的是同一个程序，功能完全一样，挑顺手的用。
 需要 .NET Framework 4.8 —— Win10 1803 以后的系统自带，Win7/8 需要装一次。
 
 ---
@@ -218,9 +218,13 @@ src/QingShang/
 **给越狱 / TrollStore 设备用**：编译产物是**未签名 IPA**，不需要证书、不需要 Apple ID，
 用 TrollStore 直接打开安装，或者 `TrollStore → 从文件安装`。
 
-**怎么拿 IPA**：仓库里带了个 GitHub Actions 工作流（`.github/workflows/ios.yml`），
-每次推 `ios/` 下的改动就会在 macOS runner 上自动编译，产物在 Actions 页面的
-`QingShang-iOS-ipa` artifact 里。你也可以在 Actions 里手动点 `Run workflow`。
+**IPA 就在 [Releases](https://github.com/yy1142274323/qingshang/releases) 里**，和 Windows 版挂在一起。
+
+用 TrollStore 打开这个 `.ipa` 就能装 —— 不需要证书、不需要 Apple ID、不用重签。
+
+仓库里带了个 GitHub Actions 工作流（`.github/workflows/ios.yml`），每次推 `ios/` 下的改动
+就会在 macOS runner 上自动编译出新的 IPA，产物在 Actions 页面的 `QingShang-iOS-ipa` artifact 里，
+也可以在 Actions 里手动点 `Run workflow`。
 
 ```bash
 # 自己本地编（需要 macOS + Xcode）
