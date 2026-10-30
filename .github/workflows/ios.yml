@@ -9,7 +9,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 30
 
     steps:
@@ -44,7 +44,7 @@ jobs:
             ONLY_ACTIVE_ARCH=NO \
             ARCHS=arm64 \
             VALIDATE_PRODUCT=NO \
-            build 2>&1 | tail -n 60
+            build 2>&1 | tail -n 80
 
       - name: Package IPA
         working-directory: ios

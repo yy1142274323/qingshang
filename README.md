@@ -208,6 +208,50 @@ src/QingShang/
 - 频谱是合成的节奏可视化，不是真实 FFT
 - 暂不支持桌面歌词、自定义皮肤
 
+
+---
+
+## iOS 版
+
+同一套视觉，原生 SwiftUI 重写了一份，源码在 [`ios/`](ios/)。
+
+**给越狱 / TrollStore 设备用**：编译产物是**未签名 IPA**，不需要证书、不需要 Apple ID，
+用 TrollStore 直接打开安装，或者 `TrollStore → 从文件安装`。
+
+**怎么拿 IPA**：仓库里带了个 GitHub Actions 工作流（`.github/workflows/ios.yml`），
+每次推 `ios/` 下的改动就会在 macOS runner 上自动编译，产物在 Actions 页面的
+`QingShang-iOS-ipa` artifact 里。你也可以在 Actions 里手动点 `Run workflow`。
+
+```bash
+# 自己本地编（需要 macOS + Xcode）
+brew install xcodegen
+cd ios && xcodegen generate
+xcodebuild -project QingShang.xcodeproj -scheme QingShang \
+  -sdk iphoneos -configuration Release \
+  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
+mkdir -p out/Payload && cp -r build/Build/Products/Release-iphoneos/QingShang.app out/Payload/
+cd out && zip -qry QingShang.ipa Payload
+```
+
+**放歌的两种方式**
+
+1. 播放器里点右上角 `+`，从「文件」App 选歌（会自动复制进沙盒）
+2. 用 Filza 直接把歌丢进 `Documents` 目录（`UIFileSharingEnabled` 已开，文件 App 里也能看到）
+
+**iOS 版有什么**
+
+- 黑胶唱片跟着播放转，配色按曲目哈希生成
+- 56 段频谱律动
+- 后台播放 + 锁屏控制（`MPRemoteCommandCenter`，耳机线控和锁屏都能切歌）
+- 进度条拖动、单曲循环
+- 深色界面，和 Windows 版是同一套配色
+
+**iOS 版没什么**
+
+- 没有 LRC 歌词（iOS 沙盒里读同目录 `.lrc` 要额外做文件关联，先欠着）
+- 没有 ID3 之外的元数据编辑
+- 只支持竖屏 iPhone（iPad 也能装，但没专门适配布局）
+
 ---
 
 ## 许可
