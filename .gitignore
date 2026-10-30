@@ -1,0 +1,7 @@
+dist/
+music/
+tools/probe/
+*.m3u8
+*.zip
+.vs/
+*.user
