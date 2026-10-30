@@ -3,7 +3,7 @@ import AVFoundation
 import MediaPlayer
 import Combine
 
-/// 播放引擎：AVAudioPlayer + 后台播放 + 锁屏控制 + 100ms 心跳。
+/// 播放引擎：AVPlayer 统一处理本地文件和网络流，支持后台播放和锁屏控制。
 @MainActor
 final class PlayerEngine: ObservableObject {
     @Published private(set) var tracks: [Track] = []
@@ -11,18 +11,18 @@ final class PlayerEngine: ObservableObject {
     @Published private(set) var isPlaying: Bool = false
     @Published private(set) var position: Double = 0
     @Published private(set) var duration: Double = 0
+    @Published private(set) var isBuffering: Bool = false
     @Published var repeatOne: Bool = false
 
-    private var player: AVAudioPlayer?
-    private var ticker: Timer?
-    private var loadToken = UUID()
+    private var player: AVPlayer?
+    private var timeObserver: Any?
+    private var endToken: NSObjectProtocol?
+    private var statusObservation: NSKeyValueObservation?
 
     var current: Track? {
         guard currentIndex >= 0 && currentIndex < tracks.count else { return nil }
         return tracks[currentIndex]
     }
-
-    // MARK: - 初始化
 
     init() {
         configureSession()
@@ -65,66 +65,96 @@ final class PlayerEngine: ObservableObject {
         }
     }
 
-    // MARK: - 播放列表
+    // MARK: - 本地列表
 
     func reload() {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let urls = AudioFiles.scan(docs)
 
+        let keepStreams = tracks.filter { $0.isStream }
         let previous = current?.url
-        tracks = urls.map { Track(url: $0, title: AudioFiles.cleanName($0.deletingPathExtension().lastPathComponent), artist: "") }
+
+        var local: [Track] = urls.map {
+            Track(url: $0, title: AudioFiles.cleanName($0.deletingPathExtension().lastPathComponent), artist: "")
+        }
+        local.append(contentsOf: keepStreams)
+        tracks = local
 
         if let prev = previous, let idx = tracks.firstIndex(where: { $0.url == prev }) {
             currentIndex = idx
-        } else if currentIndex >= tracks.count {
-            currentIndex = tracks.isEmpty ? -1 : tracks.count - 1
         }
 
-        // 补齐元数据
         for (index, url) in urls.enumerated() {
             AudioFiles.makeTrack(from: url) { [weak self] meta in
                 guard let self, index < self.tracks.count, self.tracks[index].url == meta.url else { return }
-                var merged = meta
-                self.tracks[index] = merged
-                if index == self.currentIndex, self.duration == 0 {
-                    self.duration = merged.duration
-                }
+                self.tracks[index] = meta
             }
         }
     }
 
-    // MARK: - 控制
+    // MARK: - 播放
 
     func play(at index: Int) {
         guard index >= 0 && index < tracks.count else { return }
+
         currentIndex = index
         let track = tracks[index]
 
-        let token = UUID()
-        loadToken = token
+        teardown()
 
-        do {
-            let p = try AVAudioPlayer(contentsOf: track.url)
-            p.delegate = PlayerDelegate.shared
-            p.prepareToPlay()
-            p.volume = 1.0
-            p.play()
+        let item = AVPlayerItem(url: track.url)
+        let p = AVPlayer(playerItem: item)
+        p.volume = 1.0
+        player = p
+        duration = track.duration
+        position = 0
+        isBuffering = track.isStream
 
-            player = p
-            isPlaying = true
-            duration = p.duration > 0 ? p.duration : track.duration
-            position = 0
-
-            PlayerDelegate.shared.onFinish = { [weak self] in
-                Task { @MainActor in self?.handleFinish() }
+        statusObservation = item.observe(\.status, options: [.new]) { [weak self] it, _ in
+            guard it.status == .readyToPlay else { return }
+            Task { @MainActor in
+                guard let self else { return }
+                self.isBuffering = false
+                let d = CMTimeGetSeconds(it.duration)
+                if d.isFinite && d > 0 {
+                    self.duration = d
+                    if index < self.tracks.count { self.tracks[index].duration = d }
+                }
             }
-
-            startTicker()
-            updateNowPlaying()
-        } catch {
-            isPlaying = false
-            player = nil
         }
+
+        endToken = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: item,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.handleFinish() }
+        }
+
+        timeObserver = p.addPeriodicTimeObserver(
+            forInterval: CMTime(seconds: 0.25, preferredTimescale: 600),
+            queue: .main
+        ) { [weak self] t in
+            Task { @MainActor in
+                guard let self else { return }
+                let s = t.seconds
+                if s.isFinite { self.position = s }
+            }
+        }
+
+        p.play()
+        isPlaying = true
+        updateNowPlaying()
+    }
+
+    /// 播一首在线歌：已经在列表里就复用，否则追加到队尾。
+    func playOnline(_ track: Track) {
+        if let idx = tracks.firstIndex(where: { $0.url == track.url }) {
+            play(at: idx)
+            return
+        }
+        tracks.append(track)
+        play(at: tracks.count - 1)
     }
 
     func toggle() {
@@ -138,7 +168,6 @@ final class PlayerEngine: ObservableObject {
     func pause() {
         player?.pause()
         isPlaying = false
-        stopTicker()
         updateNowPlaying()
     }
 
@@ -149,14 +178,13 @@ final class PlayerEngine: ObservableObject {
         }
         player?.play()
         isPlaying = true
-        startTicker()
         updateNowPlaying()
     }
 
     func next() {
         guard !tracks.isEmpty else { return }
-        let nextIndex = currentIndex + 1
-        play(at: nextIndex >= tracks.count ? 0 : nextIndex)
+        let n = currentIndex + 1
+        play(at: n >= tracks.count ? 0 : n)
     }
 
     func previous() {
@@ -170,8 +198,9 @@ final class PlayerEngine: ObservableObject {
 
     func seek(to time: Double) {
         guard let p = player else { return }
-        let clamped = max(0, min(p.duration, time))
-        p.currentTime = clamped
+        let clamped = max(0, min(duration > 0 ? duration : time, time))
+        p.seek(to: CMTime(seconds: clamped, preferredTimescale: 600),
+               toleranceBefore: .zero, toleranceAfter: .zero)
         position = clamped
         updateNowPlaying()
     }
@@ -185,25 +214,22 @@ final class PlayerEngine: ObservableObject {
         }
     }
 
-    // MARK: - 心跳
-
-    private func startTicker() {
-        stopTicker()
-        ticker = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                guard let self, let p = self.player else { return }
-                self.position = p.currentTime
-                if p.duration > 0 { self.duration = p.duration }
-            }
+    private func teardown() {
+        if let t = timeObserver, let p = player {
+            p.removeTimeObserver(t)
+            timeObserver = nil
         }
+        if let e = endToken {
+            NotificationCenter.default.removeObserver(e)
+            endToken = nil
+        }
+        statusObservation?.invalidate()
+        statusObservation = nil
+        player?.pause()
+        player = nil
     }
 
-    private func stopTicker() {
-        ticker?.invalidate()
-        ticker = nil
-    }
-
-    // MARK: - 锁屏信息
+    // MARK: - 锁屏
 
     private func updateNowPlaying() {
         guard let track = current else {
@@ -220,17 +246,6 @@ final class PlayerEngine: ObservableObject {
         if duration > 0 {
             info[MPMediaItemPropertyPlaybackDuration] = duration
         }
-
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-    }
-}
-
-/// AVAudioPlayer 的 delegate 需要 NSObject，单独拎一个单例出来。
-final class PlayerDelegate: NSObject, AVAudioPlayerDelegate {
-    static let shared = PlayerDelegate()
-    var onFinish: (() -> Void)?
-
-    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        onFinish?()
     }
 }

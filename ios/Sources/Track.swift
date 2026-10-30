@@ -1,20 +1,34 @@
 import Foundation
-import AVFoundation
 
-/// 一首歌。iOS 这边不做 ID3 深度解析，AVAsset 能读到的元数据就用，读不到退回文件名。
+/// 一首歌。既可以是本地文件，也可以是在线直链。
 struct Track: Identifiable, Equatable {
-    let id = UUID()
+    let id: UUID
     let url: URL
     var title: String
     var artist: String
-    var duration: Double = 0
+    var duration: Double
+    var isStream: Bool
+    var artwork: URL?
+    var sourceTag: String   // 本地为空；在线是音源名，比如「网易云」
+
+    init(url: URL, title: String, artist: String, duration: Double = 0,
+         isStream: Bool = false, artwork: URL? = nil, sourceTag: String = "") {
+        self.id = UUID()
+        self.url = url
+        self.title = title
+        self.artist = artist
+        self.duration = duration
+        self.isStream = isStream
+        self.artwork = artwork
+        self.sourceTag = sourceTag
+    }
 
     var displayArtist: String {
         artist.isEmpty ? "未知艺术家" : artist
     }
 
     static func == (a: Track, b: Track) -> Bool {
-        a.url == b.url
+        a.url == b.url && a.title == b.title
     }
 }
 
@@ -27,7 +41,6 @@ enum AudioFiles {
         extensions.contains(url.pathExtension.lowercased())
     }
 
-    /// 递归扫一个目录，把能放的音频都捞出来
     static func scan(_ root: URL) -> [URL] {
         var found: [URL] = []
         let keys: [URLResourceKey] = [.isRegularFileKey, .nameKey]
@@ -45,10 +58,9 @@ enum AudioFiles {
         return found.sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
     }
 
-    /// 读标题/歌手/时长，异步完成回调
     static func makeTrack(from url: URL, completion: @escaping (Track) -> Void) {
         let fallbackTitle = cleanName(url.deletingPathExtension().lastPathComponent)
-        let asset = AVURLAsset(url: url)
+        let asset = AVURLAssetRef.make(url)
 
         asset.loadValuesAsynchronously(forKeys: ["commonMetadata", "duration"]) {
             var title = fallbackTitle
@@ -56,12 +68,11 @@ enum AudioFiles {
             var duration: Double = 0
 
             if asset.statusOfValue(forKey: "commonMetadata", error: nil) == .loaded {
-                let items = asset.commonMetadata
-                for item in items {
+                for item in asset.commonMetadata {
                     guard let key = item.commonKey else { continue }
-                    if key == .commonKeyTitle, let v = try? item.value as? String, !v.isEmpty {
+                    if key == .commonKeyTitle, let v = item.value as? String, !v.isEmpty {
                         title = v
-                    } else if key == .commonKeyArtist, let v = try? item.value as? String, !v.isEmpty {
+                    } else if key == .commonKeyArtist, let v = item.value as? String, !v.isEmpty {
                         artist = v
                     }
                 }
@@ -77,7 +88,6 @@ enum AudioFiles {
         }
     }
 
-    /// 去掉文件名前面的序号："01 静听·夏夜" → "静听·夏夜"
     static func cleanName(_ name: String) -> String {
         let pattern = "^\\s*\\d{1,3}\\s*[.\\-_、]?\\s+"
         if let range = name.range(of: pattern, options: .regularExpression) {
@@ -86,4 +96,10 @@ enum AudioFiles {
         }
         return name
     }
+}
+
+import AVFoundation
+
+enum AVURLAssetRef {
+    static func make(_ url: URL) -> AVURLAsset { AVURLAsset(url: url) }
 }

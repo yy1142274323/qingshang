@@ -5,6 +5,7 @@ struct ContentView: View {
     @StateObject private var engine = PlayerEngine()
 
     @State private var showPlaylist = false
+    @State private var showOnline = false
     @State private var showImporter = false
     @State private var discAngle: Double = 0
     @State private var phase: Double = 0
@@ -49,7 +50,10 @@ struct ContentView: View {
         }
         .preferredColorScheme(.dark)
         .sheet(isPresented: $showPlaylist) {
-            PlaylistView(engine: engine)
+            PlaylistView(engine: engine, showImporter: $showImporter)
+        }
+        .sheet(isPresented: $showOnline) {
+            OnlineView(engine: engine)
         }
         .fileImporter(
             isPresented: $showImporter,
@@ -90,11 +94,11 @@ struct ContentView: View {
             Spacer()
 
             Button {
-                showImporter = true
+                showOnline = true
             } label: {
-                Image(systemName: "plus.circle")
-                    .font(.system(size: 18, weight: .regular))
-                    .foregroundColor(Theme.textMid)
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundColor(Theme.cyan)
             }
 
             Button {
@@ -309,6 +313,7 @@ struct ContentView: View {
 
 struct PlaylistView: View {
     @ObservedObject var engine: PlayerEngine
+    @Binding var showImporter: Bool
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -357,6 +362,15 @@ struct PlaylistView: View {
 
                                         Spacer()
 
+                                        if !track.sourceTag.isEmpty {
+                                            Text(track.sourceTag)
+                                                .font(.system(size: 9))
+                                                .foregroundColor(Theme.cyan)
+                                                .padding(.horizontal, 5)
+                                                .padding(.vertical, 1.5)
+                                                .background(Capsule().fill(Theme.cyan.opacity(0.15)))
+                                        }
+
                                         if track.duration > 0 {
                                             Text(formatTime(track.duration))
                                                 .font(.system(size: 11, design: .monospaced))
@@ -382,6 +396,15 @@ struct PlaylistView: View {
             .navigationTitle("播放列表（\(engine.tracks.count) 首）")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        dismiss()
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { showImporter = true }
+                    } label: {
+                        Image(systemName: "plus")
+                            .foregroundColor(Theme.cyan)
+                    }
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("完成") { dismiss() }
                         .foregroundColor(Theme.cyan)
