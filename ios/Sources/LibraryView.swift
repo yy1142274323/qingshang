@@ -55,8 +55,8 @@ struct LibraryView: View {
             .navigationTitle("我的")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                if segment == 1 && !library.history.isEmpty {
-                    ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    if segment == 1 && !library.history.isEmpty {
                         Button("清空") { library.clearHistory() }
                             .foregroundColor(Theme.textLow)
                             .font(.system(size: 12))
