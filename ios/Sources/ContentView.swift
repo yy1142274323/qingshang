@@ -1,11 +1,11 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct ContentView: View {
-    @StateObject private var engine = PlayerEngine()
+struct NowPlayingView: View {
+    @ObservedObject var engine: PlayerEngine
+    @ObservedObject var library: LibraryStore
 
     @State private var showPlaylist = false
-    @State private var showOnline = false
     @State private var showImporter = false
     @State private var discAngle: Double = 0
     @State private var phase: Double = 0
@@ -52,9 +52,6 @@ struct ContentView: View {
         .sheet(isPresented: $showPlaylist) {
             PlaylistView(engine: engine, showImporter: $showImporter)
         }
-        .sheet(isPresented: $showOnline) {
-            OnlineView(engine: engine)
-        }
         .fileImporter(
             isPresented: $showImporter,
             allowedContentTypes: [.audio, .mp3, .wav, .mpeg4Audio, .aiff],
@@ -93,13 +90,6 @@ struct ContentView: View {
 
             Spacer()
 
-            Button {
-                showOnline = true
-            } label: {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundColor(Theme.cyan)
-            }
 
             Button {
                 engine.reload()
@@ -175,7 +165,7 @@ struct ContentView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
 
-            Text(engine.current?.displayArtist ?? "点右上角 + 添加音乐")
+            Text(engine.current?.displayArtist ?? "本地没歌？去「发现」搜一张榜单")
                 .font(.system(size: 13))
                 .foregroundColor(engine.current == nil ? Theme.textLow : Theme.cyan.opacity(0.92))
                 .lineLimit(1)

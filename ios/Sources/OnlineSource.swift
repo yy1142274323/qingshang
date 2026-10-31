@@ -11,6 +11,7 @@ struct OnlineSong: Identifiable, Equatable {
     let album: String
     let source: String
     let picId: String
+    var picURL: String = ""
 
     var displayArtist: String { artist.isEmpty ? "未知艺术家" : artist }
 }
@@ -25,14 +26,10 @@ final class OnlineSource: ObservableObject {
     @Published var isSearching = false
     @Published var lastError: String?
 
+    /// 实测只有这两个源能返回数据，其余一律 400，不再列出来误导人。
     static let sources: [(id: String, name: String)] = [
         ("netease", "网易云"),
-        ("tencent", "QQ音乐"),
-        ("kugou", "酷狗"),
-        ("kuwo", "酷我"),
-        ("migu", "咪咕"),
-        ("joox", "JOOX"),
-        ("deezer", "Deezer")
+        ("joox", "JOOX")
     ]
 
     init() {
@@ -117,6 +114,10 @@ final class OnlineSource: ObservableObject {
 
     /// 封面图地址
     func artworkURL(for song: OnlineSong) -> URL? {
+        if !song.picURL.isEmpty {
+            // 歌单接口直接给了封面地址，比再走一次 pic 接口快
+            if song.picURL.hasPrefix("http") { return URL(string: song.picURL) }
+        }
         guard !song.picId.isEmpty,
               var comp = URLComponents(string: baseURL) else { return nil }
         comp.queryItems = [
@@ -138,5 +139,75 @@ final class OnlineSource: ObservableObject {
             artwork: artworkURL(for: song),
             sourceTag: name
         )
+    }
+}
+
+// MARK: - 榜单与歌单
+
+struct RankItem: Identifiable, Hashable {
+    let id: String
+    let name: String
+    let note: String
+    let tint: Int     // 0..5，用来挑封面底色
+}
+
+extension OnlineSource {
+    /// 这些都是实测能返回完整曲目列表的网易云歌单 ID。
+    static let ranks: [RankItem] = [
+        RankItem(id: "3778678",    name: "热歌榜",     note: "200 首",  tint: 0),
+        RankItem(id: "3779629",    name: "新歌榜",     note: "100 首",  tint: 1),
+        RankItem(id: "19723756",   name: "飙升榜",     note: "100 首",  tint: 2),
+        RankItem(id: "2884035",    name: "原创榜",     note: "100 首",  tint: 3),
+        RankItem(id: "6723173524", name: "网络热歌榜", note: "100 首",  tint: 4),
+        RankItem(id: "2809513713", name: "欧美热歌榜", note: "200 首",  tint: 5),
+        RankItem(id: "5059642708", name: "国风榜",     note: "50 首",   tint: 0),
+        RankItem(id: "71384707",   name: "古典榜",     note: "100 首",  tint: 1),
+        RankItem(id: "1978921795", name: "电音榜",     note: "50 首",   tint: 2),
+        RankItem(id: "5059644681", name: "日语榜",     note: "100 首",  tint: 3),
+        RankItem(id: "745956260",  name: "韩语榜",     note: "100 首",  tint: 4)
+    ]
+
+    /// 拉一张歌单的完整曲目。
+    func loadPlaylist(id: String, source: String = "netease") async -> [OnlineSong] {
+        guard var comp = URLComponents(string: baseURL) else { return [] }
+        comp.queryItems = [
+            URLQueryItem(name: "types", value: "playlist"),
+            URLQueryItem(name: "source", value: source),
+            URLQueryItem(name: "id", value: id)
+        ]
+        guard let url = comp.url else { return [] }
+
+        do {
+            var req = URLRequest(url: url)
+            req.timeoutInterval = 25
+            req.setValue("QingShang/1.2", forHTTPHeaderField: "User-Agent")
+
+            let (data, _) = try await URLSession.shared.data(for: req)
+            guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let pl = obj["playlist"] as? [String: Any],
+                  let tracks = pl["tracks"] as? [[String: Any]] else { return [] }
+
+            return tracks.compactMap { t in
+                guard let name = t["name"] as? String else { return nil }
+                let rawId: String
+                if let i = t["id"] as? Int { rawId = String(i) }
+                else if let s = t["id"] as? String { rawId = s }
+                else if let n = t["id"] as? NSNumber { rawId = n.stringValue }
+                else { return nil }
+
+                let artists = (t["ar"] as? [[String: Any]])?
+                    .compactMap { $0["name"] as? String }
+                    .joined(separator: " / ") ?? ""
+
+                let al = t["al"] as? [String: Any]
+                let album = al?["name"] as? String ?? ""
+                let pic = al?["picUrl"] as? String ?? ""
+
+                return OnlineSong(id: rawId, name: name, artist: artists,
+                                  album: album, source: source, picId: "", picURL: pic)
+            }
+        } catch {
+            return []
+        }
     }
 }
